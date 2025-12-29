@@ -4,18 +4,19 @@ import json
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from huggingface_hub import hf_hub_download
+from pathlib import Path
 
 # --------------------------------------------------
-# App Config
+# App config
 # --------------------------------------------------
 st.set_page_config(page_title="📛 Scam Detector", layout="centered")
 st.title("📛 Scam Detection System")
 
-REPO_ID = "prakhar146/Scam"        # Hugging Face DATASET repo
-REPO_TYPE = "dataset"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+REPO_ID = "prakhar146/Scam"        # DATASET repo
+REPO_TYPE = "dataset"
 
-LABEL_NAMES = [
+LABELS = [
     "authority_name",
     "threat_type",
     "time_pressure",
@@ -23,32 +24,47 @@ LABEL_NAMES = [
     "language_mixing"
 ]
 
+LOCAL_DIR = Path("./hf_model")
+LOCAL_DIR.mkdir(exist_ok=True)
+
 # --------------------------------------------------
-# Load Model, Tokenizer, Calibration
+# Download required files
+# --------------------------------------------------
+REQUIRED_FILES = [
+    "config.json",
+    "model.safetensors",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "vocab.json",
+    "merges.txt",
+    "scam_v1.json"
+]
+
+def download_files():
+    for file in REQUIRED_FILES:
+        hf_hub_download(
+            repo_id=REPO_ID,
+            filename=file,
+            repo_type=REPO_TYPE,
+            local_dir=LOCAL_DIR,
+            local_dir_use_symlinks=False
+        )
+
+# --------------------------------------------------
+# Load model, tokenizer, calibration
 # --------------------------------------------------
 @st.cache_resource(show_spinner=True)
 def load_all():
-    # Tokenizer (uses tokenizer.json, vocab.json, merges.txt)
-    tokenizer = AutoTokenizer.from_pretrained(
-        REPO_ID,
-        repo_type=REPO_TYPE
-    )
+    download_files()
 
-    # Model (uses config.json + model.safetensors)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        REPO_ID,
-        repo_type=REPO_TYPE
-    ).to(DEVICE)
+    tokenizer = AutoTokenizer.from_pretrained(LOCAL_DIR)
+    model = AutoModelForSequenceClassification.from_pretrained(LOCAL_DIR)
+
+    model.to(DEVICE)
     model.eval()
 
-    # Calibration file (scam_v1.json)
-    calib_path = hf_hub_download(
-        repo_id=REPO_ID,
-        repo_type=REPO_TYPE,
-        filename="scam_v1.json"
-    )
-
-    with open(calib_path, "r") as f:
+    with open(LOCAL_DIR / "scam_v1.json", "r") as f:
         cal = json.load(f)
 
     temperature = float(cal.get("temperature", 1.0))
@@ -62,25 +78,25 @@ def load_all():
 model, tokenizer, temperature, base_thresholds = load_all()
 
 # --------------------------------------------------
-# Smart Threshold Strategy (Senior-Level)
+# Senior ML adaptive thresholding
 # --------------------------------------------------
 def adaptive_thresholds(probs, base):
     """
-    Strategy:
-    - If model is uncertain overall → be sensitive
-    - If model is confident → be strict
+    Signal-aware thresholding:
+    - Strong signal → stricter
+    - Weak but structured → looser
     """
     mean_conf = probs.mean(axis=1, keepdims=True)
 
     dynamic = np.where(
-        mean_conf < 0.15, base - 0.15,      # catch subtle scams
-        np.where(mean_conf > 0.45, base + 0.1, base)
+        mean_conf > 0.45, base + 0.12,
+        np.where(mean_conf < 0.18, base - 0.15, base)
     )
 
-    return np.clip(dynamic, 0.2, 0.8)
+    return np.clip(dynamic, 0.25, 0.8)
 
 # --------------------------------------------------
-# Prediction Logic
+# Prediction
 # --------------------------------------------------
 def predict(text):
     inputs = tokenizer(
@@ -97,42 +113,39 @@ def predict(text):
         probs = torch.sigmoid(logits).cpu().numpy()
 
     thresholds = adaptive_thresholds(probs, base_thresholds)
-    preds = (probs > thresholds).astype(int)[0]
+    preds = (probs > thresholds).astype(int)
 
-    detected_dims = [
-        LABEL_NAMES[i] for i, v in enumerate(preds) if v == 1
-    ]
+    detected = [LABELS[i] for i, v in enumerate(preds[0]) if v == 1]
 
-    # High-level verdict
-    if len(detected_dims) == 0:
+    if len(detected) == 0:
         verdict = "🟢 SAFE"
-    elif len(detected_dims) <= 2:
+    elif len(detected) <= 2:
         verdict = "🟡 SUSPICIOUS"
     else:
         verdict = "🔴 SCAM"
 
-    return verdict, detected_dims, probs[0]
+    return verdict, detected, probs[0]
 
 # --------------------------------------------------
 # UI
 # --------------------------------------------------
 user_text = st.text_area(
-    "Paste SMS / WhatsApp / Email text",
+    "Enter SMS / WhatsApp / Email text",
     height=150,
-    placeholder="⚠️ URGENT: Your bank account will be blocked..."
+    placeholder="Paste message here..."
 )
 
 if st.button("Analyze"):
     if not user_text.strip():
-        st.warning("Please enter some text.")
+        st.warning("Please enter text.")
     else:
         with st.spinner("Analyzing..."):
-            verdict, dims, probs = predict(user_text)
+            verdict, detected, probs = predict(user_text)
 
         st.subheader("Result")
         st.markdown(f"### {verdict}")
-        st.write("**Detected Scam Dimensions:**", dims or "None")
+        st.write("**Detected Dimensions:**", detected if detected else "None")
 
         st.write("**Probabilities:**")
-        for name, p in zip(LABEL_NAMES, probs):
-            st.write(f"- {name}: `{p:.3f}`")
+        for lbl, p in zip(LABELS, probs):
+            st.write(f"- {lbl}: {p:.3f}")
