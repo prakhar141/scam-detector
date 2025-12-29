@@ -1,50 +1,49 @@
-# app.py
-############################################################
-# PRODUCTION-GRADE SCAM DETECTOR
-# ---------------------------------------------------------
-# 1. 0-100 SCORE  →  green / amber / red buckets
-# 2. 1-sentence rationale →  user knows *why*
-# 3. Adaptive thresholds →  keeps precision high even
-#    when base model drifts
-# 4. Everything cached →  sub-second latency
-############################################################
-import json
-import math
-import textwrap
-from pathlib import Path
-from typing import Dict, List, Tuple
-
-import numpy as np
 import streamlit as st
 import torch
-import torch.nn.functional as F
+import json
+import numpy as np
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from huggingface_hub import hf_hub_download
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from pathlib import Path
+
+# --------------------------------------------------
+# App config
+# --------------------------------------------------
+st.set_page_config(page_title="📛 Indian Scam Detector", layout="centered")
+st.title("📛 Indian Scam Detection System")
+st.caption("Built for real SMS, WhatsApp & Email scams seen in India")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 REPO_ID = "prakhar146/Scam"
+REPO_TYPE = "dataset"
+
+LABELS = [
+    "authority_name",   # Police, Bank, Govt, UIDAI
+    "threat_type",      # Arrest, block, disconnect
+    "time_pressure",    # Today, 2 hours, immediately
+    "payment_method",   # UPI, gift cards, crypto
+    "language_mixing"   # Hindi + English
+]
+
 LOCAL_DIR = Path("./hf_model")
 LOCAL_DIR.mkdir(exist_ok=True)
 
-STORAGE = LOCAL_DIR / "scam_v1.json"  # produced by calibration notebook
-CONFIG = {
-    "green_max": 35,  # ≤ 35  → safe
-    "red_min": 65,  # ≥ 65  → scam
-    "Explanation top-k": 2,  # how many attributes to show user
+# --------------------------------------------------
+# Risk weights (Indian reality aware)
+# --------------------------------------------------
+RISK_WEIGHTS = {
+    "authority_name": 2.5,
+    "threat_type": 3.0,
+    "time_pressure": 2.0,
+    "payment_method": 4.0,   # strongest indicator
+    "language_mixing": 0.8   # weak alone
 }
 
-LABELS = [
-    "authority_name",
-    "threat_type",
-    "time_pressure",
-    "payment_method",
-    "language_mixing",
-]
-
-###################################################################
-# 1.  Download artefacts once per container
-###################################################################
-REQUIRED = [
+# --------------------------------------------------
+# Download files
+# --------------------------------------------------
+REQUIRED_FILES = [
     "config.json",
     "model.safetensors",
     "tokenizer.json",
@@ -52,133 +51,147 @@ REQUIRED = [
     "special_tokens_map.json",
     "vocab.json",
     "merges.txt",
-    "scam_v1.json",
+    "scam_v1.json"
 ]
 
-
-def _download():
-    for file in REQUIRED:
+def download_files():
+    for f in REQUIRED_FILES:
         hf_hub_download(
             repo_id=REPO_ID,
-            filename=file,
-            repo_type="dataset",
+            filename=f,
+            repo_type=REPO_TYPE,
             local_dir=LOCAL_DIR,
-            local_dir_use_symlinks=False,
+            local_dir_use_symlinks=False
         )
 
+# --------------------------------------------------
+# Load model
+# --------------------------------------------------
+@st.cache_resource(show_spinner=True)
+def load_all():
+    download_files()
 
-###################################################################
-# 2.  Load model + calibration
-###################################################################
-@st.cache_resource(show_spinner="Loading AI model …")
-def _load():
-    _download()
-    tok = AutoTokenizer.from_pretrained(LOCAL_DIR)
-    model = AutoModelForSequenceClassification.from_pretrained(LOCAL_DIR).to(DEVICE).eval()
+    tokenizer = AutoTokenizer.from_pretrained(LOCAL_DIR)
+    model = AutoModelForSequenceClassification.from_pretrained(LOCAL_DIR)
+    model.to(DEVICE)
+    model.eval()
 
-    with open(STORAGE) as f:
+    with open(LOCAL_DIR / "scam_v1.json", "r") as f:
         cal = json.load(f)
+
     temperature = float(cal.get("temperature", 1.0))
-    weights = np.array(cal.get("weights", [1.0] * len(LABELS)), dtype=np.float32)
-    bias = float(cal.get("bias", 0.0))
-    return tok, model, temperature, weights, bias
+    return model, tokenizer, temperature
 
+model, tokenizer, temperature = load_all()
 
-tok, model, temperature, weights, bias = _load()
+# --------------------------------------------------
+# Risk computation (senior ML logic)
+# --------------------------------------------------
+def compute_risk(probs):
+    """
+    Non-linear, weighted risk aggregation
+    """
+    total_risk = 0.0
+    contributions = {}
 
-###################################################################
-# 3.  Inference helpers
-###################################################################
-def _get_proba(text: str) -> np.ndarray:
-    """Return raw probabilities for each attribute."""
-    inputs = tok(
+    for label, p in zip(LABELS, probs):
+        weight = RISK_WEIGHTS[label]
+
+        # Non-linear amplification for high confidence
+        signal_strength = (p ** 1.6) * weight
+        contributions[label] = signal_strength
+        total_risk += signal_strength
+
+    # Strong real-world interaction rules
+    if probs[LABELS.index("payment_method")] > 0.6 and \
+       probs[LABELS.index("authority_name")] > 0.5:
+        total_risk += 3.0  # Police + money = scam
+
+    if probs[LABELS.index("time_pressure")] > 0.6 and \
+       probs[LABELS.index("payment_method")] > 0.5:
+        total_risk += 2.0  # Urgency + payment
+
+    return total_risk, contributions
+
+# --------------------------------------------------
+# Verdict logic (human-aligned)
+# --------------------------------------------------
+def verdict_from_risk(risk):
+    if risk < 2.5:
+        return "🟢 SAFE", "Low risk. Message matches normal Indian communication patterns."
+    elif risk < 6.0:
+        return "🟡 SUSPICIOUS", (
+            "Some scam-like patterns detected. "
+            "Do NOT click links or share OTPs. Verify independently."
+        )
+    else:
+        return "🔴 SCAM", (
+            "High confidence scam. This matches common Indian fraud tactics. "
+            "Do NOT respond, pay, or share any information."
+        )
+
+# --------------------------------------------------
+# Prediction
+# --------------------------------------------------
+def analyze_message(text):
+    inputs = tokenizer(
         text,
-        return_tensors="pt",
         truncation=True,
         padding=True,
         max_length=128,
+        return_tensors="pt"
     ).to(DEVICE)
 
     with torch.no_grad():
-        logits = model(**inputs).logits / temperature
-        prob = torch.sigmoid(logits).cpu().numpy().squeeze()
-    return prob
+        outputs = model(**inputs)
+        logits = outputs.logits / temperature
+        probs = torch.sigmoid(logits).cpu().numpy()[0]
 
+    risk, contributions = compute_risk(probs)
+    verdict, explanation = verdict_from_risk(risk)
 
-def _score(prob: np.ndarray) -> float:
-    """Weighted log-odds → squashed to 0-100."""
-    logit = np.log(prob / (1 - prob + 1e-8))
-    score = float(logit.dot(weights) + bias)
-    # sigmoid → 0-1 → 0-100
-    return float(1 / (1 + math.exp(-score))) * 100
+    detected = [
+        lbl for lbl, p in zip(LABELS, probs) if p > 0.5
+    ]
 
+    return verdict, explanation, risk, detected, probs, contributions
 
-def _explain(prob: np.ndarray, top_k: int = 2) -> str:
-    """Return 1-sentence human explanation."""
-    idx = np.argsort(prob)[::-1][:top_k]
-    keys = [LABELS[i] for i in idx]
-    return (
-        f"Strongest scam signals: {', '.join(keys)} "
-        f"({prob[idx[0]]:.0%} confidence)."
-    )
-
-
-def analyse(text: str) -> Tuple[float, str, Dict[str, float]]:
-    prob = _get_proba(text)
-    score = _score(prob)
-    explanation = _explain(prob, top_k=CONFIG["Explanation top-k"])
-    detail = {L: float(p) for L, p in zip(LABELS, prob)}
-    return score, explanation, detail
-
-
-###################################################################
-# 4.  Streamlit UI
-###################################################################
-st.set_page_config(page_title="AI Scam Detector", layout="centered")
-st.title("🛡️ AI Scam Detector")
-st.markdown(
-    "Paste any SMS, WhatsApp, e-mail or social-media message below. "
-    "The model returns an **easy-to-understand score** and tells you **why**."
+# --------------------------------------------------
+# UI
+# --------------------------------------------------
+user_text = st.text_area(
+    "Paste SMS / WhatsApp / Email message",
+    height=160,
+    placeholder="Example: Your electricity will be disconnected today. Pay via UPI..."
 )
 
-msg = st.text_area(
-    "Message to analyse",
-    placeholder="Paste message here …",
-    height=150,
-)
-
-if st.button("Analyse"):
-    if not msg.strip():
-        st.warning("Please enter some text.")
-        st.stop()
-
-    with st.spinner("Analysing …"):
-        score, reason, probs = analyse(msg)
-
-    # ------- visual verdict ----------------------------------
-    if score <= CONFIG["green_max"]:
-        verdict = "🟢 SAFE"
-        colour = "green"
-    elif score >= CONFIG["red_min"]:
-        verdict = "🔴 SCAM"
-        colour = "red"
+if st.button("Analyze Message"):
+    if not user_text.strip():
+        st.warning("Please enter a message.")
     else:
-        verdict = "🟡 SUSPICIOUS"
-        colour = "orange"
+        with st.spinner("Analyzing message like a fraud investigator..."):
+            verdict, explanation, risk, detected, probs, contrib = analyze_message(user_text)
 
-    st.markdown(f"## {verdict}  –  **{score:.0f} / 100**")
-    st.markdown(f"*Reason:* {reason}")
+        st.subheader("Final Verdict")
+        st.markdown(f"## {verdict}")
+        st.write(explanation)
 
-    # ------- expandable details ------------------------------
-    with st.expander("Show technical details"):
-        st.write("Per-dimension probabilities:")
-        st.write(probs)
+        st.divider()
 
-###################################################################
-# 5.  Requirements (place in requirements.txt)
-###################################################################
-# streamlit>=1.28
-# torch
-# transformers
-# huggingface-hub
-# numpy
+        st.subheader("Why this result?")
+        if detected:
+            for lbl in detected:
+                st.write(f"• **{lbl.replace('_',' ').title()}** detected")
+        else:
+            st.write("No strong scam indicators found.")
+
+        st.divider()
+
+        st.subheader("Risk Breakdown")
+        for lbl in LABELS:
+            st.write(
+                f"- {lbl}: probability={probs[LABELS.index(lbl)]:.2f}, "
+                f"risk contribution={contrib[lbl]:.2f}"
+            )
+
+        st.caption(f"Total Risk Score: {risk:.2f}")
