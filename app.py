@@ -567,7 +567,7 @@ def main():
                 #"Entity Recognition": risk_profile.entity_score,
                 #"Linguistic Analysis": risk_profile.temporal_features.get('threat_density', 0) * 100,
                 #"Combination Bonus": risk_profile.combination_bonus
-            }
+            #}
             for component, score in components.items():
                 st.markdown(f"""
                 <div style="display: flex; justify-content: space-between; margin: 0.5rem 0;">
