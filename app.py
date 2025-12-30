@@ -514,8 +514,8 @@ def main():
             "Safe Message": "Hi, are we still meeting for lunch today? Let me know if you're running late. See you at 1 PM!",
             "Lottery Scam": "🎉 CONGRATULATIONS! You won ₹1 Crore in KBC WhatsApp Lottery! To claim, send ₹25,000 processing fee to this Paytm number: 9876543210"
         }
-        #selected_example = st.selectbox("📋 Load Example Message", ["Custom"] + list(examples.keys()))
-        #example_text = examples.get(selected_example, "")
+        selected_example = st.selectbox("📋 Load Example Message", ["Custom"] + list(examples.keys()))
+        example_text = examples.get(selected_example, "")
         user_text = st.text_area("✏️ Enter SMS, WhatsApp, or Email message:", value=example_text, height=150,
                                  placeholder="Paste your message here for PhD-level analysis...", key="message_input")
         analyze_col, clear_col = st.columns([1, 4])
