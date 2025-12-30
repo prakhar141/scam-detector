@@ -568,13 +568,13 @@ def main():
                 #"Linguistic Analysis": risk_profile.temporal_features.get('threat_density', 0) * 100,
                 #"Combination Bonus": risk_profile.combination_bonus
             #}
-            for component, score in components.items():
-                st.markdown(f"""
-                <div style="display: flex; justify-content: space-between; margin: 0.5rem 0;">
-                    <span>{component}:</span>
-                    <strong>{score:.1f}%</strong>
-                </div>
-                """, unsafe_allow_html=True)
+            #for component, score in components.items():
+                #st.markdown(f"""
+                #<div style="display: flex; justify-content: space-between; margin: 0.5rem 0;">
+                    #<span>{component}:</span>
+                    #<strong>{score:.1f}%</strong>
+                #</div>
+                #""", unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("### ⚡ Action Recommendations")
         for rec in risk_profile.recommendations:
