@@ -558,8 +558,8 @@ def main():
            # if risk_profile.signals:
                # fig_radar = viz_engine.plot_signal_strength(risk_profile.signals)
                 #st.plotly_chart(fig_radar, use_container_width=True)
-            else:
-                st.info("No specific scam signals detected")
+           # else:
+               # st.info("No specific scam signals detected")
         with col_det2:
             #st.markdown("**📊 Component Scores:**")
             #components = {
