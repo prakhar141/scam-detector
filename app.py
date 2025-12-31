@@ -532,7 +532,7 @@ def main():
 
     with st.sidebar:
         st.markdown("### 🧬 Active Learning")
-        if st.button("🔄 Reset FP Memory"):
+        if st.button("🔄 Reset My Memory"):
             if FP_DB_PATH.exists():  # FIXED: Using global FP_DB_PATH
                 FP_DB_PATH.unlink()
                 st.success("False positive memory wiped.")
