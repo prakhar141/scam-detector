@@ -1,6 +1,7 @@
 """
 MOONSHOT AI: BharatScam Guardian - Digital Savior Protocol
 Psychologically-Aware Anti-Scam Intelligence with Doctorate-Level Reasoning
+Fixed: PhDEntityRecognizer and all missing components defined
 """
 import streamlit as st
 import torch, torch.nn.functional as F
@@ -28,20 +29,125 @@ LOCAL_DIR.mkdir(exist_ok=True)
 FP_DB_PATH = LOCAL_DIR / "savior_memory_v2.db"
 LABELS = ["authority_name", "threat_type", "time_pressure", "payment_method", "language_mixing"]
 
-# Psychological manipulation weights (Doctorate-level insights)
+# Entity patterns for recognition
+ENTITY_PATTERNS = {
+    'indian_phone': r'(?:\+91|0|९१)?[६-९]\d{9}|(?:\+91|0)[6-9]\d{9}',
+    'upi_vpa': r'[\w.-]+@(?:paytm|ybl|upi|sbi|axis|hdfc|icici|pnb|bob)',
+    'aadhaar': r'\d{4}[\s-]?\d{4}[\s-]?\d{4}',
+    'pan': r'[A-Z]{5}\d{4}[A-Z]{1}',
+    'bank_account': r'(?:account|a/c).*?(?:\d{10,16}|\d{4}[\s-]\d{4}[\s-]\d{4}[\s-]\d{4})',
+    'ifsc': r'[A-Z]{4}0[A-Z0-9]{6}',
+    'credit_card': r'\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}',
+    'urgency_words': r'(?:immediately|तुरंत|तात्काळ|urgent|जलद|अत्यावश्यक|within.*hour|24.*hour|48.*hour)',
+    'threat_words': r'(?:arrest|गिरफ्तार|अटक|legal.*action|court|warrant|block.*account|suspend)',
+    'payment_words': r'(?:pay|paytm|google.*pay|phonepe|upi|qr.*code|wallet|transfer|deposit)',
+    'authority_words': r'(?:rbi|reserve.*bank|sbi|hdfc|icici|axis|cbi|narcotics|fedex|govt|government|pm.*modi)'
+}
+
+# Psychological manipulation weights
 MANIPULATION_TACTICS = {
-    'authority_impersonation': 2.8,  # CBI/RBI/SBI officer
-    'urgency_pressure': 2.4,         # "within 2 hours"
-    'fear_appeal': 2.9,              # "arrest", "legal action"
-    'scarcity_creation': 2.1,        # "limited time offer"
-    'social_proof_fake': 1.8,        # "1000 people have claimed"
-    'reciprocity_fake': 2.0,         # "you've won lottery"
-    'commitment_escalation': 2.3,    # Small ask leading to bigger fraud
-    'isolation_tactic': 2.5,         # "Don't tell anyone"
+    'authority_impersonation': 2.8,  'urgency_pressure': 2.4,  'fear_appeal': 2.9,
+    'scarcity_creation': 2.1,  'social_proof_fake': 1.8,  'reciprocity_fake': 2.0,
+    'commitment_escalation': 2.3,  'isolation_tactic': 2.5,
 }
 
 # --------------------------------------------------
-# PSYCHOLOGICAL MANIPULATION DETECTION ENGINE
+# CORE COMPONENTS (FIXED MISSING CLASSES)
+# --------------------------------------------------
+class PhDEntityRecognizer:
+    """Advanced entity recognition with risk scoring"""
+    
+    def __init__(self):
+        self.entity_risk_scores = {
+            'indian_phone': 0.3, 'upi_vpa': 0.9, 'aadhaar': 1.3, 'pan': 1.1,
+            'bank_account': 1.6, 'ifsc': 1.0, 'credit_card': 1.4
+        }
+    
+    def extract_entities(self, text: str) -> Tuple[Dict, float]:
+        entities = {}
+        entity_score = 0
+        for entity_type, pattern in ENTITY_PATTERNS.items():
+            if entity_type in ['urgency_words', 'threat_words', 'payment_words', 'authority_words']:
+                continue
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            if matches:
+                entities[entity_type] = list(set(matches))
+                entity_score += self.entity_risk_scores.get(entity_type, 0.5)
+        return entities, min(entity_score / 6, 1.0)
+    
+    def score_entities_fast(self, text: str) -> float:
+        return self.extract_entities(text)[1]
+
+class TemporalFeatureEngine:
+    """Analyzes temporal patterns in scam messages"""
+    
+    def score_temporal_patterns(self, text: str) -> float:
+        hour = datetime.now().hour
+        score = 0.0
+        
+        # Night time scams (psychological vulnerability)
+        if hour >= 22 or hour <= 5:
+            score += 0.12
+        
+        # Weekend targeting
+        if datetime.now().weekday() >= 5:
+            score += 0.08
+        
+        # Late night urgency
+        if re.search(r'immediately|within.*hour', text, re.I) and hour >= 20:
+            score += 0.15
+        
+        return min(score, 0.3)
+
+class FalsePositiveMemory:
+    """Intelligent memory system for learning from mistakes"""
+    
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self._init_db()
+    
+    def _init_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS fp_memory (
+                    text_hash TEXT PRIMARY KEY,
+                    text TEXT UNIQUE,
+                    timestamp REAL,
+                    fp_reason TEXT,
+                    user_feedback TEXT
+                )
+            """)
+    
+    def store_fp(self, text: str, reason: str, feedback: str = ""):
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO fp_memory VALUES (?, ?, ?, ?, ?)",
+                (text_hash, text, time.time(), reason, feedback)
+            )
+    
+    def query_similar(self, text: str, threshold: float = 0.78) -> Optional[Dict]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("SELECT text_hash, text, fp_reason FROM fp_memory").fetchall()
+            if not rows:
+                return None
+            
+            corpus = [row[1] for row in rows] + [text]
+            vectorizer = TfidfVectorizer(ngram_range=(2, 3), max_features=500)
+            tfidf = vectorizer.fit_transform(corpus)
+            sims = cosine_similarity(tfidf[-1], tfidf[:-1])[0]
+            max_idx = np.argmax(sims)
+            
+            if sims[max_idx] > threshold:
+                return {
+                    "similarity": sims[max_idx],
+                    "reason": rows[max_idx][2],
+                    "original_text": rows[max_idx][1][:100] + "..."
+                }
+        return None
+
+# --------------------------------------------------
+# PSYCHOLOGICAL MANIPULATION ANALYZER
 # --------------------------------------------------
 class PsychologicalManipulationAnalyzer:
     """Detects cognitive exploitation tactics that bypass rational thinking"""
@@ -113,7 +219,7 @@ class PsychologicalManipulationAnalyzer:
         return min(weighted_score * 1.5, 1.0), dict(scores)
 
 # --------------------------------------------------
-# ADVANCED PATTERN ENGINE WITH IMPERSONATION ANALYSIS
+# ADVANCED PATTERN ENGINE
 # --------------------------------------------------
 class AdvancedPatternEngine:
     """Detects multi-stage scams and impersonation attempts"""
@@ -146,11 +252,6 @@ class AdvancedPatternEngine:
                 'weight': 3.5
             }
         }
-        
-        self.code_switching_patterns = {
-            'hi_en': r'[\u0900-\u097F]+.*\b(?:pay|account|otp|bank)\b|\b(?:pay|account|otp|bank)\b.*[\u0900-\u097F]+',
-            'en_bn': r'[\u0980-\u09FF]+.*\b(?:pay|account|otp|bank)\b|\b(?:pay|account|otp|bank)\b.*[\u0980-\u09FF]+'
-        }
     
     def detect_sophisticated_patterns(self, text: str) -> Tuple[float, List[Dict]]:
         total_score = 0
@@ -175,10 +276,6 @@ class AdvancedPatternEngine:
                         'description': self._get_scam_description(scam_type)
                     })
         
-        # Code-switching detection (characteristic of Indian scams)
-        cs_score = self._detect_code_switching(text)
-        total_score += cs_score
-        
         return min(total_score / 8, 1.0), matches
     
     def _verify_required_entities(self, text: str, required: List[str]) -> float:
@@ -198,13 +295,6 @@ class AdvancedPatternEngine:
                 found += 1
         
         return found / len(required) if required else 0.5
-    
-    def _detect_code_switching(self, text: str) -> float:
-        cs_score = 0
-        for lang, pattern in self.code_switching_patterns.items():
-            if re.search(pattern, text, re.IGNORECASE):
-                cs_score += 0.85  # High weight for code-switching
-        return cs_score
     
     def _get_scam_description(self, scam_type: str) -> str:
         descriptions = {
@@ -229,30 +319,19 @@ class BayesianCausalNetwork:
     def _build_bayesian_network(self) -> nx.DiGraph:
         G = nx.DiGraph()
         
-        # Nodes with prior probabilities
         nodes = {
-            'scam': 0.15,  # Base rate of scams
-            'authority_claim': 0.25,
-            'urgency_pressure': 0.30,
-            'fear_language': 0.20,
-            'payment_request': 0.18,
-            'data_request': 0.22,
-            'legit_context': 0.70,
-            'temporal_anomaly': 0.10,
-            'code_switching': 0.35
+            'scam': 0.15, 'authority_claim': 0.25, 'urgency_pressure': 0.30,
+            'fear_language': 0.20, 'payment_request': 0.18, 'data_request': 0.22,
+            'legit_context': 0.70, 'temporal_anomaly': 0.10, 'code_switching': 0.35
         }
         
         for node, prior in nodes.items():
             G.add_node(node, prior=prior)
         
-        # Causal edges with conditional probabilities (simplified CPT weights)
         edges = {
-            ('authority_claim', 'scam'): 0.82,
-            ('urgency_pressure', 'scam'): 0.75,
-            ('fear_language', 'scam'): 0.88,
-            ('payment_request', 'scam'): 0.91,
-            ('data_request', 'scam'): 0.85,
-            ('temporal_anomaly', 'urgency_pressure'): 0.65,
+            ('authority_claim', 'scam'): 0.82, ('urgency_pressure', 'scam'): 0.75,
+            ('fear_language', 'scam'): 0.88, ('payment_request', 'scam'): 0.91,
+            ('data_request', 'scam'): 0.85, ('temporal_anomaly', 'urgency_pressure'): 0.65,
             ('code_switching', 'authority_claim'): 0.58,
             ('legit_context', 'authority_claim'): -0.70,  # Inhibitory effect
             ('legit_context', 'fear_language'): -0.80,
@@ -312,6 +391,23 @@ class BayesianCausalNetwork:
         
         return min(legit_score, 1.0)
 
+    def adjust_probabilities(self, text: str, probs: np.ndarray) -> np.ndarray:
+        """Apply causal adjustments to model probabilities"""
+        legit_indicators = self._detect_legitimate_indicators(text)
+        if legit_indicators:
+            adjustment = np.prod([1 - self.bayesian_net.get_edge_data(ind, 'scam', default={'weight': 0.3}).get('weight', 0.3)
+                                  for ind in legit_indicators])
+            probs = probs * (0.85 ** len(legit_indicators))
+        return probs
+    
+    def _detect_legitimate_indicators(self, text: str) -> List[str]:
+        indicators = []
+        if re.search(r'OTP.*login|verification.*device|bank.*registered', text, re.I):
+            indicators.append('legitimate_alert')
+        if re.search(r'Dear Customer.*SBI|RBI.*regulation|Govt.*notification', text, re.I):
+            indicators.append('legitimate_alert')
+        return indicators
+
 # --------------------------------------------------
 # ADVERSARIAL EVASION DETECTOR
 # --------------------------------------------------
@@ -324,13 +420,7 @@ class AdversarialEvasionDetector:
             'special_char_injection': r'[.,]{3,}|[!]{2,}',
             'unicode_homoglyph': r'[а-яА-ЯЁё]',  # Cyrillic letters in English text
             'leet_speak': r'[1!]mpersonat[0o]|c0ntact|ca11',
-            'spacing_anomaly': r'\s{3,}|\b\w{15,}\b'  # Excessive spaces or超长单词
-        }
-        
-        self.low_quality_indicators = {
-            'grammar_inconsistency': r'\b[A-Z]{2,4}\b.*\b[a-z]{2,4}\b.*\b[A-Z]{2,4}\b',
-            'punctuation_misuse': r'[.,]{2,}[a-zA-Z]|[!?]{2,}[a-zA-Z]',
-            'case_inconsistency': r'[A-Z]{4,}[a-z]{2,}[A-Z]{4,}'
+            'spacing_anomaly': r'\s{3,}|\b\w{15,}\b'
         }
     
     def detect_evasion_attempts(self, text: str) -> Tuple[float, List[str]]:
@@ -342,57 +432,16 @@ class AdversarialEvasionDetector:
                 evasion_score += 0.25
                 techniques.append(technique)
         
-        for indicator, pattern in self.low_quality_indicators.items():
-            if re.search(pattern, text):
-                evasion_score += 0.15
-                techniques.append(indicator)
-        
         return min(evasion_score, 1.0), techniques
     
     def normalize_evasion_text(self, text: str) -> str:
         """Attempt to normalize obfuscated text"""
-        # Remove excessive punctuation
         text = re.sub(r'[.,]{3,}', '.', text)
         text = re.sub(r'[!]{2,}', '!', text)
-        
-        # Normalize common obfuscations
         text = re.sub(r'\bO\b', '0', text)
         text = re.sub(r'[1!]mpersonat[0o]', 'impersonate', text, flags=re.I)
         text = re.sub(r'\s{2,}', ' ', text)
-        
         return text
-
-# --------------------------------------------------
-# DYNAMIC THRESHOLD MANAGER
-# --------------------------------------------------
-class DynamicThresholdManager:
-    """Intelligently adjusts thresholds based on message context"""
-    
-    def __init__(self, base_thresholds: np.ndarray):
-        self.base_thresholds = base_thresholds
-        self.entity_density_boost = 0.08
-        self.temporal_boost = 0.12
-        self.manipulation_boost = 0.15
-        
-    def calculate_dynamic_thresholds(self, text: str, 
-                                   entity_score: float,
-                                   manipulation_score: float,
-                                   temporal_score: float) -> np.ndarray:
-        
-        # Lower thresholds = more sensitive detection when risk factors present
-        adjustment = np.zeros_like(self.base_thresholds)
-        
-        if entity_score > 0.3:
-            adjustment -= self.entity_density_boost
-        
-        if temporal_score > 0.15:
-            adjustment -= self.temporal_boost
-        
-        if manipulation_score > 0.5:
-            adjustment -= self.manipulation_boost
-        
-        # Never go below 0.30 (prevent over-triggering)
-        return np.maximum(self.base_thresholds + adjustment, 0.30)
 
 # --------------------------------------------------
 # UNCERTAINTY QUANTIFICATION ENGINE
@@ -432,6 +481,37 @@ class UncertaintyQuantifier:
         return combined_uncertainty, calibrated_confidence
 
 # --------------------------------------------------
+# DYNAMIC THRESHOLD MANAGER
+# --------------------------------------------------
+class DynamicThresholdManager:
+    """Intelligently adjusts thresholds based on message context"""
+    
+    def __init__(self, base_thresholds: np.ndarray):
+        self.base_thresholds = base_thresholds
+        self.entity_density_boost = 0.08
+        self.temporal_boost = 0.12
+        self.manipulation_boost = 0.15
+        
+    def calculate_dynamic_thresholds(self, text: str, 
+                                   entity_score: float,
+                                   manipulation_score: float,
+                                   temporal_score: float) -> np.ndarray:
+        # Lower thresholds = more sensitive detection when risk factors present
+        adjustment = np.zeros_like(self.base_thresholds)
+        
+        if entity_score > 0.3:
+            adjustment -= self.entity_density_boost
+        
+        if temporal_score > 0.15:
+            adjustment -= self.temporal_boost
+        
+        if manipulation_score > 0.5:
+            adjustment -= self.manipulation_boost
+        
+        # Never go below 0.30 (prevent over-triggering)
+        return np.maximum(self.base_thresholds + adjustment, 0.30)
+
+# --------------------------------------------------
 # SMART CASCADE GUARD
 # --------------------------------------------------
 class SmartCascadeGuard:
@@ -469,12 +549,14 @@ class SmartCascadeGuard:
         if entity_score > 0.4:
             early_risk += entity_score * 0.5
             metadata['risk_indicators'].append('high_entity_density')
+            metadata['entity_score'] = entity_score
         
         # Psychological manipulation is a STRONG signal
         manipulation_score, manipulation_breakdown = self.risk_orchestrator.manipulation_analyzer.calculate_manipulation_score(normalized_text)
         if manipulation_score > 0.4:
             early_risk += manipulation_score * 0.7
             metadata['risk_indicators'].append('psychological_manipulation')
+            metadata['manipulation_score'] = manipulation_score
             metadata['manipulation_breakdown'] = manipulation_breakdown
         
         # Pattern matching
@@ -483,6 +565,12 @@ class SmartCascadeGuard:
             early_risk += pattern_score * 0.6
             metadata['risk_indicators'].append('scam_pattern_match')
             metadata['pattern_matches'] = pattern_matches
+            metadata['pattern_score'] = pattern_score
+        
+        # Temporal analysis
+        temporal_score = self.risk_orchestrator.temporal_engine.score_temporal_patterns(normalized_text)
+        if temporal_score > 0.1:
+            metadata['temporal_score'] = temporal_score
         
         # Decision: Analyze deeply if any significant risk or uncertainty
         if early_risk > 0.25 or len(metadata['risk_indicators']) >= 2:
@@ -760,6 +848,48 @@ def load_savior_detector():
     }
 
 # --------------------------------------------------
+# VISUALIZATION ENGINE
+# --------------------------------------------------
+class PhDVisualizationEngine:
+    @staticmethod
+    def plot_savior_gauge(score: float, level: str) -> go.Figure:
+        """Enhanced gauge with psychological urgency"""
+        colors = {'SAFE': '#22c55e', 'CAUTION': '#eab308', 'SUSPICIOUS': '#f97316', 'SCAM': '#dc2626'}
+        
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number+delta",
+            value=score,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            title={'text': "SCAM RISK SCORE", 'font': {'size': 28, 'color': colors[level]}},
+            delta={'reference': 50, 'increasing': {'color': "#dc2626"}},
+            gauge={
+                'axis': {'range': [None, 100], 'tickwidth': 2, 'tickcolor': "darkred", 'tickvals': [0, 25, 45, 65, 100]},
+                'bar': {'color': colors[level], 'thickness': 0.6},
+                'bgcolor': "white", 'borderwidth': 3, 'bordercolor': colors[level],
+                'steps': [
+                    {'range': [0, 25], 'color': "#dcfce7"},
+                    {'range': [25, 45], 'color': "#fef3c7"},
+                    {'range': [45, 65], 'color': "#fed7aa"},
+                    {'range': [65, 100], 'color': "#fee2e2"}
+                ],
+                'threshold': {
+                    'line': {'color': "red", 'width': 5},
+                    'thickness': 0.8,
+                    'value': 65
+                }
+            }
+        ))
+        
+        fig.update_layout(
+            paper_bgcolor="white",
+            font={'color': colors[level], 'family': "Inter, sans-serif"},
+            height=300,
+            margin=dict(l=30, r=30, t=50, b=30)
+        )
+        
+        return fig
+
+# --------------------------------------------------
 # STREAMLIT UI - PSYCHOLOGICAL OPTIMIZATION
 # --------------------------------------------------
 def main():
@@ -906,7 +1036,7 @@ def main():
             # Risk Gauge
             col_viz1, col_viz2 = st.columns([2, 1])
             with col_viz1:
-                fig = self._plot_savior_gauge(risk_profile.score, risk_profile.level)
+                fig = PhDVisualizationEngine.plot_savior_gauge(risk_profile.score, risk_profile.level)
                 st.plotly_chart(fig, use_container_width=True)
             
             with col_viz2:
@@ -981,43 +1111,6 @@ def main():
     Doctorate-Level Reasoning | Adversarial Robustness | Zero False-Positive Tolerance
     </p>
     """, unsafe_allow_html=True)
-
-    def _plot_savior_gauge(self, score: float, level: str) -> go.Figure:
-        """Enhanced gauge with psychological urgency"""
-        colors = {'SAFE': '#22c55e', 'CAUTION': '#eab308', 'SUSPICIOUS': '#f97316', 'SCAM': '#dc2626'}
-        
-        fig = go.Figure(go.Indicator(
-            mode="gauge+number+delta",
-            value=score,
-            domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': "SCAM RISK SCORE", 'font': {'size': 28, 'color': colors[level]}},
-            delta={'reference': 50, 'increasing': {'color': "#dc2626"}},
-            gauge={
-                'axis': {'range': [None, 100], 'tickwidth': 2, 'tickcolor': "darkred", 'tickvals': [0, 25, 45, 65, 100]},
-                'bar': {'color': colors[level], 'thickness': 0.6},
-                'bgcolor': "white", 'borderwidth': 3, 'bordercolor': colors[level],
-                'steps': [
-                    {'range': [0, 25], 'color': "#dcfce7"},
-                    {'range': [25, 45], 'color': "#fef3c7"},
-                    {'range': [45, 65], 'color': "#fed7aa"},
-                    {'range': [65, 100], 'color': "#fee2e2"}
-                ],
-                'threshold': {
-                    'line': {'color': "red", 'width': 5},
-                    'thickness': 0.8,
-                    'value': 65
-                }
-            }
-        ))
-        
-        fig.update_layout(
-            paper_bgcolor="white",
-            font={'color': colors[level], 'family': "Inter, sans-serif"},
-            height=300,
-            margin=dict(l=30, r=30, t=50, b=30)
-        )
-        
-        return fig
 
 if __name__ == "__main__":
     main()
