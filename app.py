@@ -24,6 +24,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 REPO_ID = "prakhar146/Scamming"
 LOCAL_DIR = Path("./hf_model_godfather")
 LOCAL_DIR.mkdir(exist_ok=True)
+FP_DB_PATH = LOCAL_DIR / "false_positive_memory.db"  # FIXED: Global definition
 LABELS = ["authority_name", "threat_type", "time_pressure", "payment_method", "language_mixing"]
 
 THRESHOLD_CONFIG = {
@@ -338,7 +339,7 @@ class CausalRiskOrchestrator:
         self.pattern_engine = PhDPatternEngine()
         self.entity_recognizer = PhDEntityRecognizer()
         self.causal_graph = CausalGraph()
-        self.fp_memory = FalsePositiveMemory(FP_DB_PATH)
+        self.fp_memory = FalsePositiveMemory(FP_DB_PATH)  # FIXED: Now using global FP_DB_PATH
         self.temperature = temperature
         self.base_thresholds = thresholds
         self.temporal_engine = TemporalFeatureEngine()
@@ -532,7 +533,7 @@ def main():
     with st.sidebar:
         st.markdown("### 🧬 Active Learning")
         if st.button("🔄 Reset FP Memory"):
-            if (FP_DB_PATH := LOCAL_DIR / "false_positive_memory.db").exists():
+            if FP_DB_PATH.exists():  # FIXED: Using global FP_DB_PATH
                 FP_DB_PATH.unlink()
                 st.success("False positive memory wiped.")
 
