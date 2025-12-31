@@ -574,7 +574,7 @@ def main():
             probs, thresholds, passed_cascade = cascade.run_stage_gated_inference(user_text)
 
             if not passed_cascade:
-                st.info("✅ Message passed early safety filters. Low scam likelihood.")
+                st.info("✅ Message passed early safety filters. Low scam likelihood")
                 return
 
             risk_profile = cascade.risk_calc.calculate_risk(user_text, probs, thresholds)
