@@ -25,7 +25,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 # BEHAVIORAL PSYCHOLOGY CONFIGURATION
 # ============================================================
 # Color Palette Based on Psychological Impact & Cultural Resonance
-PSYCHOLOGY_COLORS = {
+COLORS = {
     "safe": "#2D936C",      # Trust Green (reduces cortisol)
     "caution": "#F4A261",   # Warning Amber (attention without panic)
     "suspicious": "#E76F51", # Alert Orange (heightened awareness)
