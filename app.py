@@ -233,6 +233,7 @@ class RiskProfile:
     verifiability_details: List[str]
     coherence_issues: List[str]
 
+
 class CoreOrchestrator:
     def __init__(self, T, thres):
         self.T = T
@@ -245,52 +246,47 @@ class CoreOrchestrator:
         # Load model
         tok, mdl, _, _ = load_model()
         inputs = tok(text, return_tensors="pt", truncation=True, padding=True).to(DEVICE)
-        
+
         with torch.no_grad():
             logits = mdl(**inputs).logits / self.T
             probs = torch.sigmoid(logits).cpu().numpy()[0]
-        
+
         # STEP 1: Detect scam patterns (traditional approach)
         detected = probs > self.thres
         scam_signals = probs[detected].mean() if detected.any() else probs.max() * 0.25
-        
+
         # STEP 2: Detect LEGITIMACY anchors (INVERSE of false positives)
         legitimacy_score, legitimacy_proof = self.trust_engine.score(text)
-        
+
         # STEP 3: Score verifiability of claims
         claims = self.claims_engine.extract_claims(text)
         verifiability_score, verif_details = self.claims_engine.score_verifiability(text, claims)
-        
+
         # STEP 4: Detect semantic incoherence (scam confusion tactics)
         incoherence_score, coherence_issues = self.coherence_engine.score(text)
-        
+
         # CORE INNOVATION: Multiplicative risk formula
-        # Risk = ScamSignals × (1 - Legitimacy)² × (1 - Verifiability) × (1 + Incoherence)
-        # This ensures:
-        # - High legitimacy SUPPRESSES risk exponentially
-        # - Verifiable claims REDUCE risk linearly
-        # - Incoherence AMPLIFIES risk
-        # Result: Bank OTP messages have high legitimacy + verifiability = VERY LOW risk
-        
-        risk_multiplier = (1 - legitimacy_score)  ** 2 * (1 - verifiability_score) * (1 + incoherence_score * 0.5)
+        risk_multiplier = (1 - legitimacy_score) ** 2 * (1 - verifiability_score) * (1 + incoherence_score * 0.5)
         final_risk = min(scam_signals * risk_multiplier, 1.0)
-        
+
         # Dynamic thresholding based on context complexity
         if legitimacy_score > 0.5 and verifiability_score > 0.4:
-            # If it looks official and verifiable, raise the bar for "SCAM"
             risk_thresholds = np.array([0.2, 0.4, 0.7])  # SAFE, CAUTION, SUSPICIOUS, SCAM
         else:
-            # Unknown sender, lower thresholds
             risk_thresholds = np.array([0.15, 0.3, 0.5])
-        
-        level_idx = min(int(final_risk / 0.35), 3)
+
+        level_idx = int(np.clip(final_risk / 0.35, 0, 3))
         level = ["SAFE", "CAUTION", "SUSPICIOUS", "SCAM"][level_idx]
-        
+
         # Only show scam triggers if risk is substantial
         triggers = {}
         if final_risk > 0.3:
-            triggers = {CP_AFT_LABELS[i]: float(probs[i]) for i in range(len(probs)) if detected[i]}
-        
+            triggers = {
+                label: float(prob)
+                for label, prob, is_detected in zip(CP_AFT_LABELS, probs, detected)
+                if is_detected
+            }
+
         # Recommendations based on VERIFIABILITY, not just risk
         if legitimacy_score > 0.6:
             recos = ["✅ Message contains official trust anchors", "📞 Verify using OFFICIAL app/website only", "🔍 Check reference numbers in official portal"]
@@ -298,9 +294,9 @@ class CoreOrchestrator:
             recos = ["🚨 DO NOT respond directly", "📞 Call official number from your card/bank statement", "🔒 Enable transaction limits", "🗑️ Delete after reporting"]
         else:
             recos = ["⏳ Pause before acting", "🤔 Ask: 'Can I verify this without replying?'"]
-        
+
         return RiskProfile(
-            round(final_risk*100, 2),
+            round(final_risk * 100, 2),
             level,
             round((1 - np.std(probs)) * 100, 2),
             triggers,
@@ -309,7 +305,6 @@ class CoreOrchestrator:
             verif_details,
             coherence_issues
         )
-
 # ============================================================
 # STREAMLIT UI (Enhanced with Proof Display)
 # ============================================================
