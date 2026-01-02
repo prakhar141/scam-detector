@@ -323,7 +323,7 @@ def header():
     </style>
     <div class="head">
         <h1 style="margin:0;font-size:2.5rem;">🛡️ BharatScam Guardian</h1>
-        <p style="margin:.5rem 0 0 0;opacity:.9;">Zero False-Positive AI: First Verify Legitimacy, Then Assess Risk</p>
+        <p style="margin:.5rem 0 0 0;opacity:.9;"> Protect India: First Verify Legitimacy, Then Assess Risk</p>
         <div style="margin-top:1rem;">
             <span class="badge">🇮🇳 CERT-In Partner</span>
             <span class="badge">🔍 Legitimacy-First</span>
