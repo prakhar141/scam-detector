@@ -176,35 +176,49 @@ class CoreOrchestrator:
         with torch.no_grad():
             logits = mdl(**inputs).logits/self.T
             probs = torch.sigmoid(logits).cpu().numpy()[0]
-        # Scam signals
+        
+        # Traditional scam signals
         detected = probs>self.thres
         scam_signals = probs[detected].mean() if detected.any() else probs.max()*0.25
-        # Legitimacy
+        
+        # Legitimacy anchors
         leg_score, leg_proof = self.trust.score(text)
-        # Claims
+        
+        # Verifiable claims
         claims_list = self.claims.extract_claims(text)
         ver_score, claim_details = self.claims.score_verifiability(claims_list)
-        # Coherence
+        
+        # Semantic coherence
         incoh_score, incoh_issues = self.coherence.score(text)
-        # Multiplicative risk
+        
+        # Multiplicative risk formula
         risk = scam_signals*(1-leg_score)**2*(1-ver_score)*(1+0.5*incoh_score)
-        # Dynamic, normalized 0-1 scaling for 4 levels
-        thresholds = np.array([0.25,0.5,0.75])
-        if risk<thresholds[0]: level="SAFE"
-        elif risk<thresholds[1]: level="CAUTION"
-        elif risk<thresholds[2]: level="SUSPICIOUS"
+        
+        # ============================================================
+        # ADAPTIVE THRESHOLDING
+        # ============================================================
+        base_thresh = np.array([0.25,0.5,0.75])
+        adaptive_thresh = base_thresh*(1-leg_score)*(1-0.5*ver_score)+0.2*incoh_score
+        # Determine level dynamically
+        if risk<adaptive_thresh[0]: level="SAFE"
+        elif risk<adaptive_thresh[1]: level="CAUTION"
+        elif risk<adaptive_thresh[2]: level="SUSPICIOUS"
         else: level="SCAM"
+        
         # Confidence
         conf = (1-np.std(probs))*100
-        # Triggers
+        
+        # Trigger details
         triggers = {label:float(p) for label,p,det in zip(CP_AFT_LABELS,probs,detected) if det}
-        # Recommendations
+        
+        # Recommendations based on legitimacy & risk
         if leg_score>0.6:
             recos = ["✅ Official trust anchors detected","📞 Verify on official portal","🔍 Check reference numbers"]
         elif risk>0.5:
             recos = ["🚨 DO NOT respond","📞 Call official numbers","🔒 Enable transaction limits","🗑️ Delete after reporting"]
         else:
             recos = ["⏳ Pause before acting","🤔 Can I verify without replying?"]
+        
         return RiskProfile(round(risk*100,2),level,round(conf,2),triggers,recos,leg_proof,claim_details,incoh_issues)
 
 # ============================================================
