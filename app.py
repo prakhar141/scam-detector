@@ -298,6 +298,22 @@ class CP_AFT_RiskOrchestrator:
 # ============================================================
 # 2.  SESSION-STATE MANAGER
 # ============================================================
+CP_AFT_LABELS = [
+    "authority_impersonation","legal_threat","account_threat",
+    "time_pressure","payment_request","upi_request",
+    "bank_details_request","otp_request","credential_phish",
+    "kyc_fraud","lottery_fraud","job_scam",
+    "delivery_scam","refund_scam","investment_scam",
+    "romance_scam","charity_scam","tech_support_scam",
+    "qr_code_attack","language_mixing",
+    "fear_induction","scarcity_pressure",
+    "isolation_instruction","impersonated_brand"
+]
+
+COLORS = {
+    "SAFE":"#2D936C","CAUTION":"#F4A261","SUSPICIOUS":"#E76F51","SCAM":"#C1121C"
+}
+
 def init_state():
     for k in ["msg","profile","stage"]:
         if k not in st.session_state:
