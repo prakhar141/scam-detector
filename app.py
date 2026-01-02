@@ -357,7 +357,7 @@ def hero(p: RiskProfile):
     
     # Show WHY the score is what it is
     st.markdown("#### 📊 Risk Breakdown")
-    st.progress(p.score/100)
+    st.progress(float(p.score)/100.0)
     
     if p.legitimacy_proof:
         st.markdown("##### ✅ Legitimacy Anchors Detected (Risk Reducer)")
