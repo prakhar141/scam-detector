@@ -267,7 +267,12 @@ class CoreOrchestrator:
 
         # CORE INNOVATION: Multiplicative risk formula
         risk_multiplier = (1 - legitimacy_score) ** 2 * (1 - verifiability_score) * (1 + incoherence_score * 0.5)
-        final_risk = min(scam_signals * risk_multiplier, 1.0)
+        if scam_signals <0.15 and incoherence_score <0.15:
+            if legitimacy_score >0.25:
+                final_risk = min(final_risk, 0.2)
+        action_claims = any(c.claim_type == "action" for c in claims)
+        if not action_claims and final_risk < 0.4:
+            final_risk = min(final_risk, 0.2)
 
         # Dynamic thresholding based on context complexity
         if legitimacy_score > 0.5 and verifiability_score > 0.4:
@@ -277,6 +282,12 @@ class CoreOrchestrator:
 
         level_idx = int(np.clip(final_risk / 0.35, 0, 3))
         level = ["SAFE", "CAUTION", "SUSPICIOUS", "SCAM"][level_idx]
+        caution_type=None
+        if level=="CAUTION":
+            if legitimacy_score>0.4:
+                caution_type="Verify"
+            else:
+                caution_type="Ambigous"
 
         # Only show scam triggers if risk is substantial
         triggers = {}
