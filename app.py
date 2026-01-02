@@ -35,67 +35,109 @@ TRIGGERS   = [
 # ------------------------------------------------------------------
 @st.cache_resource(show_spinner="🛡️ Fetching 24-trigger CP-AFT artefacts…")
 def load_cpaft_pipeline():
-    from transformers import AutoTokenizer, AutoConfig, AutoModelForSequenceClassification
-    from huggingface_hub import hf_hub_download
-    import safetensors.torch, json
+    # -----------------------------
+    # constants
+    # -----------------------------
+    HF_DATASET = "prakhar146/scam"     # dataset repo
+    LOCAL_DIR = Path("hf_flat").resolve()
+    LOCAL_DIR.mkdir(parents=True, exist_ok=True)
 
-    HF_DATASET = "prakhar146/scam"          # your dataset repo
-    LOCAL_DIR  = Path("hf_flat").resolve()
-    LOCAL_DIR.mkdir(exist_ok=True)
-
-    # exact file names **as they appear in the dataset repo**
-    FILES = {
+    # EXACT filenames in HF dataset repo
+    FILES = [
         "config.json",
-        "model.safetensors",   # <-- double-check this name in your repo
+        "model.safetensors",
         "tokenizer.json",
         "tokenizer_config.json",
         "special_tokens_map.json",
         "vocab.json",
         "merges.txt",
         "scam_v1.json"
-    }
+    ]
 
-    # download each file **only if missing**
+    # -----------------------------
+    # download (only if missing)
+    # -----------------------------
     for fname in FILES:
-        hf_hub_download(
-            repo_id=HF_DATASET,
-            filename=fname,
-            repo_type="dataset",
-            local_dir=str(LOCAL_DIR),
-            local_dir_use_symlinks=False
-        )
+        target = LOCAL_DIR / fname
+        if not target.exists():
+            path = hf_hub_download(
+                repo_id=HF_DATASET,
+                filename=fname,
+                repo_type="dataset",
+                local_dir=str(LOCAL_DIR),
+                local_dir_use_symlinks=False
+            )
+            if path is None:
+                raise RuntimeError(f"❌ Failed to download {fname}")
 
-    # ----- load -----
-    tok = AutoTokenizer.from_pretrained(str(LOCAL_DIR), local_files_only=True)
-    config = AutoConfig.from_pretrained(LOCAL_DIR / "config.json", local_files_only=True)
+    # -----------------------------
+    # tokenizer
+    # -----------------------------
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(LOCAL_DIR),
+        local_files_only=True
+    )
+
+    # -----------------------------
+    # config
+    # -----------------------------
+    config = AutoConfig.from_pretrained(
+        str(LOCAL_DIR),
+        local_files_only=True
+    )
     config.num_labels = N_TRIG
 
+    # -----------------------------
+    # model weights
+    # -----------------------------
     model_path = LOCAL_DIR / "model.safetensors"
     if not model_path.exists():
-        st.error(f"❌ {model_path.name} not found in dataset repo – check file name.")
+        st.error("❌ model.safetensors missing in dataset repo")
         st.stop()
 
     state_dict = safetensors.torch.load_file(model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        None, config=config, state_dict=state_dict,
-        torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32
-    ).eval().to(DEVICE)
 
-    with open(LOCAL_DIR / "scam_v1.json") as f:
+    # CRITICAL FIX:
+    # from_pretrained MUST receive a valid path (never None)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        str(LOCAL_DIR),
+        config=config,
+        state_dict=state_dict,
+        torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
+        local_files_only=True
+    )
+
+    model.eval()
+    model.to(DEVICE)
+
+    # -----------------------------
+    # calibration data
+    # -----------------------------
+    cal_path = LOCAL_DIR / "scam_v1.json"
+    if not cal_path.exists():
+        raise RuntimeError("❌ scam_v1.json missing")
+
+    with open(cal_path, "r", encoding="utf-8") as f:
         cal = json.load(f)
 
+    # -----------------------------
+    # return bundle
+    # -----------------------------
     return {
-        "tokenizer": tok,
+        "tokenizer": tokenizer,
         "model": model,
         "temperature": float(cal["temperature"]),
-        "thresholds": np.array(cal["thresholds"])
+        "thresholds": np.array(cal["thresholds"], dtype=np.float32)
     }
+
+
 # ------------------------------------------------------------------
 # tiny helper
 # ------------------------------------------------------------------
 def load_safetensors(path):
-    import safetensors.torch
-    return safetensors.torch.load_file(path)
+    if path is None:
+        raise ValueError("path cannot be None")
+    return safetensors.torch.load_file(str(path))
 # ------------------------------------------------------------------
 # 3. PSYCHOLOGICAL + PATTERN MODULES (unchanged API)
 # ------------------------------------------------------------------
