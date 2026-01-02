@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Set
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from huggingface_hub import hf_hub_download
+from streamlit_lottie import st_lottie
+import requests
 
 # ============================================================
 # BEHAVIORAL PSYCHOLOGY & VERIFIABILITY CONFIGURATION
@@ -450,6 +452,12 @@ def verifiability_section(p: RiskProfile):
 # ============================================================
 # MAIN PAGE FLOW
 # ============================================================
+def load_lottie(url: str):
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
 def main():
     st.set_page_config(page_title="BharatScam Guardian", page_icon="🛡️", layout="centered")
     init_state()
@@ -457,8 +465,12 @@ def main():
     input_area()
     
     if st.session_state.stage == "RUNNING":
-        with st.spinner(""):
-            time.sleep(0.5)  # Brief pause for UX
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            lottie = load_lottie("https://assets10.lottiefiles.com/packages/lf20_usmfx6bp.json")
+            st_lottie(lottie, height=200, loop=True)
+            st.markdown("### 🔍 Analyzing legitimacy & scam signals…")      
+            
         
         orch = CoreOrchestrator(*load_model()[2:])
         profile = orch.infer(st.session_state.msg)
