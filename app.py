@@ -250,7 +250,7 @@ def main():
     if st.session_state.stage=="DONE" and st.session_state.profile:
         p=st.session_state.profile
         st.markdown(f"### Risk Score: {p.score}% — {p.level}")
-        st.progress(p.score/100)
+        st.progress(float(p.score)/100.0)
         if p.legitimacy_proof: st.markdown("#### ✅ Legitimacy Anchors"); [st.markdown(f"- {x}") for x in p.legitimacy_proof]
         if p.claim_analysis: st.markdown("#### 🔬 Claim Verifiability"); [st.markdown(f"- {x}") for x in p.claim_analysis]
         if p.coherence_issues: st.markdown("#### ⚠️ Coherence Issues"); [st.markdown(f"- {x}") for x in p.coherence_issues]
