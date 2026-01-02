@@ -31,28 +31,31 @@ TRIGGERS   = [
     "curiosity_gap","illusion_of_transparency","weak_social_proof"
 ]
 # ------------------------------------------------------------------
-# 2. LOCAL-ONLY LOADER (NO HF HUB)
-# ------------------------------------------------------------------
-# ------------------------------------------------------------------
-# 2. HF-DATASET → FLAT LOCAL DIR  (NO SUB-FOLDERS)
+# 2. HF-DATASET → FLAT LOCAL DIR  (defensive)
 # ------------------------------------------------------------------
 @st.cache_resource(show_spinner="🛡️ Fetching 24-trigger CP-AFT artefacts…")
 def load_cpaft_pipeline():
     from transformers import AutoTokenizer, AutoConfig, AutoModelForSequenceClassification
     from huggingface_hub import hf_hub_download
-    import json
-    import shutil
+    import safetensors.torch, json
 
-    HF_DATASET = "prakhar146/scam"   # ← your HF dataset repo
-    LOCAL_DIR  = Path("hf_flat").resolve()   # flat folder
+    HF_DATASET = "prakhar146/scam"          # your dataset repo
+    LOCAL_DIR  = Path("hf_flat").resolve()
     LOCAL_DIR.mkdir(exist_ok=True)
 
-    # list of exact files you uploaded to the dataset repo
-    FILES = ["config.json", "model.safetensors", "tokenizer.json",
-             "tokenizer_config.json", "special_tokens_map.json",
-             "vocab.json", "merges.txt", "scam_v1.json"]
+    # exact file names **as they appear in the dataset repo**
+    FILES = {
+        "config.json",
+        "model.safetensors",   # <-- double-check this name in your repo
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "vocab.json",
+        "merges.txt",
+        "scam_v1.json"
+    }
 
-    # download each file straight into LOCAL_DIR (no sub-dirs)
+    # download each file **only if missing**
     for fname in FILES:
         hf_hub_download(
             repo_id=HF_DATASET,
@@ -62,11 +65,17 @@ def load_cpaft_pipeline():
             local_dir_use_symlinks=False
         )
 
-    # ----- load from flat folder -----
+    # ----- load -----
     tok = AutoTokenizer.from_pretrained(str(LOCAL_DIR), local_files_only=True)
     config = AutoConfig.from_pretrained(LOCAL_DIR / "config.json", local_files_only=True)
     config.num_labels = N_TRIG
-    state_dict = load_safetensors(LOCAL_DIR / "model.safetensors")
+
+    model_path = LOCAL_DIR / "model.safetensors"
+    if not model_path.exists():
+        st.error(f"❌ {model_path.name} not found in dataset repo – check file name.")
+        st.stop()
+
+    state_dict = safetensors.torch.load_file(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(
         None, config=config, state_dict=state_dict,
         torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32
@@ -81,7 +90,6 @@ def load_cpaft_pipeline():
         "temperature": float(cal["temperature"]),
         "thresholds": np.array(cal["thresholds"])
     }
-
 # ------------------------------------------------------------------
 # tiny helper
 # ------------------------------------------------------------------
