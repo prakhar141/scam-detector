@@ -195,65 +195,186 @@ class CoreOrchestrator:
 # ============================================================
 # STREAMLIT UI (UX/PhD Level)
 # ============================================================
+# ===================================================================
+# AESTHETIC  STREAMLIT  UI  (drop-in replacement)
+# ===================================================================
+import streamlit as st
+import time, json
+from pathlib import Path
+
+# -------------------------------------------------- theme & assets
+THEME = {
+    "bg"        : "#0E1117",
+    "card"      : "#1A1D29",
+    "accent"    : "#00F5D4",          # neon teal
+    "danger"    : "#FF3C3C",
+    "success"   : "#00DFA2",
+    "warning"   : "#FFB800",
+    "text"      : "#FAFAFA",
+    "subtle"    : "#8B8D9C"
+}
+
+def local_css():
+    st.markdown(f"""
+    <style>
+    /* root overrides */
+    .stApp {{
+        background: {THEME["bg"]};
+        color: {THEME["text"]};
+    }}
+    /* cards */
+    .card {{
+        background: {THEME["card"]};
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 24px rgba(0,0,0,.25);
+        border-left: 4px solid {THEME["accent"]};
+    }}
+    /* progress bar */
+    .stProgress > div > div > div > div {{
+        background: linear-gradient(90deg,{THEME["accent"]} 0%, {THEME["success"]} 100%);
+    }}
+    /* buttons */
+    div.stButton > button {{
+        border: none;
+        color: {THEME["bg"]};
+        background: linear-gradient(90deg,{THEME["accent"]} 0%, {THEME["success"]} 100%);
+        font-weight: 600;
+        border-radius: 12px;
+        height: 48px;
+        transition: transform .2s;
+    }}
+    div.stButton > button:hover {{
+        transform: scale(1.03);
+    }}
+    /* titles */
+    h1, h2, h3, h4 {{
+        font-family: 'Inter', sans-serif;
+        font-weight: 700;
+        letter-spacing: -.5px;
+    }}
+    /* subtle text */
+    .subtle {{
+        color: {THEME["subtle"]};
+        font-size: 14px;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# -------------------------------------------------- state helpers
 def init_state():
     for k in ["msg","profile","stage"]:
-        if k not in st.session_state: st.session_state[k]=None
+        if k not in st.session_state:
+            st.session_state[k]=None
 
+# -------------------------------------------------- pretty printer
+def risk_badge(level:str)->str:
+    color = {
+        "SAFE":"#00DFA2",
+        "CAUTION":"#FFB800",
+        "SUSPICIOUS":"#FF8C00",
+        "SCAM":"#FF3C3C"
+    }[level]
+    return f"""
+    <div style="display:inline-block;background:{color}22;color:{color};
+                padding:6px 16px;border-radius:999px;font-weight:600;">
+        {level}
+    </div>
+    """
+
+# -------------------------------------------------- main app
 def main():
-    st.set_page_config(page_title="BharatScam Guardian", page_icon="🛡️", layout="wide")
-    st.markdown("<style>div.stButton>button{width:100%;font-size:16px}</style>", unsafe_allow_html=True)
+    st.set_page_config(page_title="BharatScam Guardian", page_icon="🛡️", layout="centered")
+    local_css()
     init_state()
-    
-    st.title("🛡️ BharatScam Guardian")
-    st.subheader("Legitimacy First, Risk Second — Powered by CP-AFT")
-    
-    msg = st.text_area("Paste any message here", height=200, placeholder="Copy the suspicious message...")
-    
-    col1, col2 = st.columns([3,1])
-    with col1:
-        if st.button("🔍 Analyze Message") and msg.strip():
-            st.session_state.msg = msg
-            st.session_state.stage = "RUNNING"
-            st.rerun()
-    with col2:
-        st.info("Tip: Always verify official references and links.")
 
-    if st.session_state.stage=="RUNNING":
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        for i in range(100):
-            progress_bar.progress(i+1)
-            status_text.text(f"Analyzing... {i+1}%")
-            time.sleep(0.005)
-        orch = CoreOrchestrator(*load_model()[2:])
-        profile = orch.infer(st.session_state.msg)
-        st.session_state.profile = profile
-        st.session_state.stage = "DONE"
+    # ------------------------------------------------ hero
+    st.markdown(
+        """
+        <div style="text-align:center;margin-top:-60px;margin-bottom:40px;">
+        <h1 style="font-size:52px;background:-webkit-linear-gradient(45deg,#00F5D4,#00DFA2);
+                   -webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+        BharatScam Guardian</h1>
+        <p class="subtle">Legitimacy First, Risk Second — Powered by CP-AFT</p>
+        </div>
+        """, unsafe_allow_html=True
+    )
+
+    # ------------------------------------------------ input
+    msg = st.text_area(
+        label="",
+        placeholder="Paste the suspicious message here…",
+        height=180,
+        label_visibility="collapsed"
+    )
+
+    if st.button("🔍 Analyze Message", use_container_width=True) and msg.strip():
+        st.session_state.msg = msg
+        st.session_state.stage = "RUNNING"
         st.rerun()
 
+    # ------------------------------------------------ running
+    if st.session_state.stage=="RUNNING":
+        with st.container():
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            bar = st.progress(0)
+            for i in range(100):
+                bar.progress(i+1)
+                time.sleep(0.005)
+            orch = CoreOrchestrator(*load_model()[2:])
+            st.session_state.profile = orch.infer(st.session_state.msg)
+            st.session_state.stage="DONE"
+            st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # ------------------------------------------------ results
     if st.session_state.stage=="DONE" and st.session_state.profile:
         p = st.session_state.profile
-        st.markdown(f"### Risk Score: **{p.score}% — {p.level}**")
+
+        # top card
+        st.markdown(f"""
+        <div class="card">
+        <h3>Risk Score: {p.score}% {risk_badge(p.level)}</h3>
+        """, unsafe_allow_html=True)
         st.progress(float(p.score)/100.0)
-        
-        st.markdown("#### ✅ Legitimacy Anchors")
-        for x in p.legitimacy_proof: st.success(x)
-        
-        st.markdown("#### 🔬 Claim Verifiability")
-        for x in p.claim_analysis: st.info(x)
-        
-        st.markdown("#### ⚠️ Semantic / Coherence Issues")
-        for x in p.coherence_issues: st.warning(x)
-        
-        st.markdown("#### 🎯 Detected Scam Triggers")
-        for k,v in p.triggers.items(): st.error(f"{k}: {float(v):.1%}")
-        
-        st.markdown("#### Recommended Actions")
+        st.markdown(f"<p class='subtle'>Confidence: {p.confidence}%</p>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # legitimacy
+        if p.legitimacy_proof:
+            st.markdown('<div class="card"><h4>✅ Legitimacy Anchors</h4>', unsafe_allow_html=True)
+            for x in p.legitimacy_proof: st.success(x)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # claims
+        if p.claim_analysis:
+            st.markdown('<div class="card"><h4>🔬 Claim Verifiability</h4>', unsafe_allow_html=True)
+            for x in p.claim_analysis: st.info(x)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # coherence
+        if p.coherence_issues:
+            st.markdown('<div class="card"><h4>⚠️ Coherence Issues</h4>', unsafe_allow_html=True)
+            for x in p.coherence_issues: st.warning(x)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # triggers
+        if p.triggers:
+            st.markdown('<div class="card"><h4>🎯 Detected Scam Triggers</h4>', unsafe_allow_html=True)
+            for k,v in p.triggers.items():
+                st.error(f"{k.replace('_',' ').title()}: {float(v):.1%}")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # recommendations
+        st.markdown('<div class="card"><h4>💡 Recommended Actions</h4>', unsafe_allow_html=True)
         for r in p.recos: st.write(f"- {r}")
-        
-        if st.button("🔄 Analyze New Message"):
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # reset
+        if st.button("🔄 Analyze New Message", use_container_width=True):
             st.session_state.update({"msg":None,"profile":None,"stage":None})
-            st.experimental_rerun()
+            st.rerun()
 
 if __name__=="__main__":
     main()
