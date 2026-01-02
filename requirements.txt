@@ -2,7 +2,7 @@
 streamlit>=1.28.0
 streamlit-lottie
 requests
-
+dnspython
 
 # Deep learning & NLP
 torch>=2.0.0
