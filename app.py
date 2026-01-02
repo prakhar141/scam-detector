@@ -1,3 +1,14 @@
+"""
+BHARATSCAM GUARDIAN — ANTI-FALSE-POSITIVE CORE EDITION
+Revolutionary "Legitimacy-by-Default" Architecture with Verifiable Claim Deconstruction
+"""
+
+# ============================================================
+# Core Philosophy: 
+# False positives occur because systems hunt for scams. 
+# We hunt for VERIFIABILITY & LEGITIMACY first, then derive risk.
+# A message is only risky if it LACKS trust anchors, not just contains scary words.
+# ============================================================
 
 import streamlit as st
 import torch
@@ -9,8 +20,6 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Set
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from huggingface_hub import hf_hub_download
-from streamlit_lottie import st_lottie
-import requests
 
 # ============================================================
 # BEHAVIORAL PSYCHOLOGY & VERIFIABILITY CONFIGURATION
@@ -225,9 +234,6 @@ class RiskProfile:
     coherence_issues: List[str]
 
 
-# ============================================================
-# CORE ORCHESTRATOR
-# ============================================================
 class CoreOrchestrator:
     def __init__(self, T, thres):
         self.T = T
@@ -237,9 +243,7 @@ class CoreOrchestrator:
         self.coherence_engine = SemanticCoherenceEngine()
 
     def infer(self, text: str) -> RiskProfile:
-        # -------------------------------
-        # MODEL INFERENCE
-        # -------------------------------
+        # Load model
         tok, mdl, _, _ = load_model()
         inputs = tok(text, return_tensors="pt", truncation=True, padding=True).to(DEVICE)
 
@@ -247,72 +251,34 @@ class CoreOrchestrator:
             logits = mdl(**inputs).logits / self.T
             probs = torch.sigmoid(logits).cpu().numpy()[0]
 
-        # -------------------------------
-        # STEP 1: Scam signal strength
-        # -------------------------------
+        # STEP 1: Detect scam patterns (traditional approach)
         detected = probs > self.thres
         scam_signals = probs[detected].mean() if detected.any() else probs.max() * 0.25
 
-        # -------------------------------
-        # STEP 2: Legitimacy anchors
-        # -------------------------------
+        # STEP 2: Detect LEGITIMACY anchors (INVERSE of false positives)
         legitimacy_score, legitimacy_proof = self.trust_engine.score(text)
 
-        # -------------------------------
-        # STEP 3: Claim extraction & verifiability
-        # -------------------------------
+        # STEP 3: Score verifiability of claims
         claims = self.claims_engine.extract_claims(text)
         verifiability_score, verif_details = self.claims_engine.score_verifiability(text, claims)
 
-        # -------------------------------
-        # STEP 4: Semantic incoherence
-        # -------------------------------
+        # STEP 4: Detect semantic incoherence (scam confusion tactics)
         incoherence_score, coherence_issues = self.coherence_engine.score(text)
 
-        # -------------------------------
-        # STEP 5: Base multiplicative risk
-        # -------------------------------
-        risk_multiplier = (
-            (1 - legitimacy_score) ** 2
-            * (1 - verifiability_score)
-            * (1 + incoherence_score * 0.5)
-        )
+        # CORE INNOVATION: Multiplicative risk formula
+        risk_multiplier = (1 - legitimacy_score) ** 2 * (1 - verifiability_score) * (1 + incoherence_score * 0.5)
         final_risk = min(scam_signals * risk_multiplier, 1.0)
 
-        # =====================================================
-        # FIX 2: Benign-default override
-        # =====================================================
-        if scam_signals < 0.15 and incoherence_score < 0.15:
-            if legitimacy_score > 0.25:
-                final_risk = min(final_risk, 0.2)
+        # Dynamic thresholding based on context complexity
+        if legitimacy_score > 0.5 and verifiability_score > 0.4:
+            risk_thresholds = np.array([0.2, 0.4, 0.7])  # SAFE, CAUTION, SUSPICIOUS, SCAM
+        else:
+            risk_thresholds = np.array([0.15, 0.3, 0.5])
 
-        # =====================================================
-        # FIX 3: No-action → SAFE downgrade
-        # =====================================================
-        action_claims = any(c.claim_type == "action" for c in claims)
-        if not action_claims and final_risk < 0.4:
-            final_risk = min(final_risk, 0.2)
-
-        # -------------------------------
-        # STEP 6: Risk level assignment
-        # -------------------------------
         level_idx = int(np.clip(final_risk / 0.35, 0, 3))
         level = ["SAFE", "CAUTION", "SUSPICIOUS", "SCAM"][level_idx]
 
-        # =====================================================
-        # FIX 1: CAUTION subtype (internal only)
-        # =====================================================
-        caution_type = None
-        if level == "CAUTION":
-            if legitimacy_score > 0.4:
-                caution_type = "VERIFY"
-            else:
-                caution_type = "AMBIGUOUS"
-        # (caution_type intentionally not exposed to UI)
-
-        # -------------------------------
-        # STEP 7: Scam trigger explanation
-        # -------------------------------
+        # Only show scam triggers if risk is substantial
         triggers = {}
         if final_risk > 0.3:
             triggers = {
@@ -321,42 +287,24 @@ class CoreOrchestrator:
                 if is_detected
             }
 
-        # -------------------------------
-        # STEP 8: Recommendations
-        # -------------------------------
+        # Recommendations based on VERIFIABILITY, not just risk
         if legitimacy_score > 0.6:
-            recos = [
-                "✅ Message contains official trust anchors",
-                "📞 Verify using OFFICIAL app/website only",
-                "🔍 Check reference numbers in official portal"
-            ]
+            recos = ["✅ Message contains official trust anchors", "📞 Verify using OFFICIAL app/website only", "🔍 Check reference numbers in official portal"]
         elif final_risk > 0.5:
-            recos = [
-                "🚨 DO NOT respond directly",
-                "📞 Call official number from your card/bank statement",
-                "🔒 Enable transaction limits",
-                "🗑️ Delete after reporting"
-            ]
+            recos = ["🚨 DO NOT respond directly", "📞 Call official number from your card/bank statement", "🔒 Enable transaction limits", "🗑️ Delete after reporting"]
         else:
-            recos = [
-                "⏳ Pause before acting",
-                "🤔 Ask: 'Can I verify this without replying?'"
-            ]
+            recos = ["⏳ Pause before acting", "🤔 Ask: 'Can I verify this without replying?'"]
 
-        # -------------------------------
-        # FINAL OUTPUT
-        # -------------------------------
         return RiskProfile(
-            score=round(final_risk * 100, 2),
-            level=level,
-            confidence=round((1 - np.std(probs)) * 100, 2),
-            triggers=triggers,
-            recos=recos,
-            legitimacy_proof=legitimacy_proof,
-            verifiability_details=verif_details,
-            coherence_issues=coherence_issues
+            round(final_risk * 100, 2),
+            level,
+            round((1 - np.std(probs)) * 100, 2),
+            triggers,
+            recos,
+            legitimacy_proof,
+            verif_details,
+            coherence_issues
         )
-
 # ============================================================
 # STREAMLIT UI (Enhanced with Proof Display)
 # ============================================================
@@ -452,12 +400,6 @@ def verifiability_section(p: RiskProfile):
 # ============================================================
 # MAIN PAGE FLOW
 # ============================================================
-def load_lottie(url: str):
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    return r.json()
-
 def main():
     st.set_page_config(page_title="BharatScam Guardian", page_icon="🛡️", layout="centered")
     init_state()
@@ -465,12 +407,18 @@ def main():
     input_area()
     
     if st.session_state.stage == "RUNNING":
-        col1, col2, col3 = st.columns([1,2,1])
-        with col2:
-            lottie = load_lottie("https://assets10.lottiefiles.com/packages/lf20_usmfx6bp.json")
-            st_lottie(lottie, height=200, loop=True)
-            st.markdown("### 🔍 Analyzing legitimacy & scam signals…")      
-            
+        progress=st.progress(0)
+        status=st.empty()
+        steps=["🔍 Checking legitimacy anchors…","📄 Verifying claims…","🧠 Analyzing coherence…","⚠️ Computing risk…"]
+        for i, step in enumerate(steps):
+            status.markdown(step)
+            for p in range(25):
+                progress.progress((i * 25 + p + 1) / 100)
+                time.sleep(0.01)
+
+
+                
+               
         
         orch = CoreOrchestrator(*load_model()[2:])
         profile = orch.infer(st.session_state.msg)
@@ -491,4 +439,4 @@ def main():
             st.rerun()
 
 if __name__ == "__main__":
-    main()
+    main()  for what cases it says suspcious 
